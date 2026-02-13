@@ -386,21 +386,85 @@ def _run_plan_for_single_series(
     planned_sales_df: pd.DataFrame,
     planned_purchases_df: pd.DataFrame,
     params: dict,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Run planning for one demand series (single SKU or aggregate)."""
+) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """Run planning for one demand series (single SKU or aggregate).
+    
+    Now includes advanced forecasting analysis:
+    - Seasonality detection
+    - Trend detection
+    - Automatic forecast method selection
+    - Forecast accuracy metrics
+    """
     planner = DemandPlanner()
     planner.load_historical_sales(historical_df)
 
     avg_demand = planner.calculate_average_daily_demand(days=30)
     demand_std = planner.calculate_daily_demand_std(days=90)
-    forecast = planner.forecast_weekly(
-        periods=int(params["forecast_periods"]),
-        ma_weeks=int(params["moving_average_weeks"]),
-        start_date=f"{params['planning_start_month']}-01",
-    )
+    
+    # ===== ADVANCED FORECASTING ANALYSIS =====
+    forecast_analysis = {
+        'seasonality': None,
+        'trend': None,
+        'forecast_method': 'moving_average',
+        'accuracy_metrics': None,
+    }
+    
+    # Detect seasonality if enough data (at least 12 weeks)
+    if len(historical_df) >= 84:  # ~12 weeks minimum
+        try:
+            seasonality = planner.detect_seasonality(min_coefficient=0.15)
+            forecast_analysis['seasonality'] = seasonality
+        except Exception:
+            pass
+    
+    # Detect trend
+    try:
+        trend = planner.detect_trend(periods=min(90, len(historical_df)))
+        forecast_analysis['trend'] = trend
+    except Exception:
+        pass
+    
+    # Select forecast method based on patterns
+    periods = int(params["forecast_periods"])
+    start_date = f"{params['planning_start_month']}-01"
+    
+    if forecast_analysis['seasonality'] and forecast_analysis['seasonality']['has_seasonality']:
+        # Use seasonal forecast if seasonality detected
+        forecast = planner.forecast_with_seasonality(periods=periods, start_date=start_date)
+        forecast_analysis['forecast_method'] = 'seasonal_exponential_smoothing'
+    elif forecast_analysis['trend'] and forecast_analysis['trend']['trend'] != 'stable':
+        # Use exponential smoothing for trending markets
+        forecast = planner.forecast_exponential_smoothing(
+            periods=periods, 
+            alpha=0.4,  # Responsive to changes
+            trend_beta=0.15  # Moderate trend weight
+        )
+        forecast_analysis['forecast_method'] = 'exponential_smoothing_with_trend'
+    else:
+        # Use standard moving average for stable markets
+        forecast = planner.forecast_weekly(
+            periods=periods,
+            ma_weeks=int(params["moving_average_weeks"]),
+            start_date=start_date,
+        )
+        forecast_analysis['forecast_method'] = 'moving_average'
+    
+    # Calculate forecast accuracy if enough historical data
+    if len(historical_df) >= 30:
+        try:
+            # Use last 30 days to evaluate
+            recent_actual = historical_df.tail(30)['quantity'].values
+            # Create a simple forecast for these 30 days for comparison
+            simple_forecast = [avg_demand] * min(30, len(recent_actual))
+            metrics = planner.calculate_forecast_error(recent_actual, simple_forecast)
+            forecast_analysis['accuracy_metrics'] = metrics
+        except Exception:
+            pass
+    
+    # Build demand plan
     demand_plan = planner.build_demand_plan(
         planned_sales=planned_sales_df if not planned_sales_df.empty else None,
-        periods=int(params["forecast_periods"]),
+        periods=periods,
     )
 
     inventory = InventoryManager(
@@ -417,7 +481,68 @@ def _run_plan_for_single_series(
     )
     purchase_plan["avg_daily_demand"] = avg_demand
     purchase_plan["daily_demand_std"] = demand_std
-    return forecast, purchase_plan
+    
+    # Add forecast analysis information to purchase plan
+    if forecast_analysis['seasonality']:
+        purchase_plan["seasonal_pattern"] = forecast_analysis['seasonality']['annual_pattern']
+    if forecast_analysis['trend']:
+        purchase_plan["market_trend"] = forecast_analysis['trend']['trend']
+        purchase_plan["trend_growth_rate"] = forecast_analysis['trend']['growth_rate']
+    
+    return forecast, purchase_plan, forecast_analysis
+
+
+def _create_forecast_analysis_summary(forecast_analysis: dict, sku: str | None = None) -> str:
+    """
+    Create a human-readable summary of forecast analysis results.
+    
+    Args:
+        forecast_analysis: Dict with seasonality, trend, forecast_method, accuracy_metrics
+        sku: Optional SKU identifier for labeling
+    
+    Returns:
+        Formatted summary string
+    """
+    lines = []
+    sku_label = f" [{sku}]" if sku else ""
+    
+    lines.append(f"\nForecast Analysis{sku_label}")
+    lines.append("-" * 50)
+    
+    # Forecast method chosen
+    method = forecast_analysis.get('forecast_method', 'unknown')
+    lines.append(f"Forecast Method: {method}")
+    
+    # Seasonality info
+    seasonality = forecast_analysis.get('seasonality')
+    if seasonality:
+        if seasonality.get('has_seasonality'):
+            lines.append(f"  ✓ Seasonality Detected: {seasonality['annual_pattern']}")
+            peak_months = seasonality.get('peak_months', [])
+            if peak_months:
+                lines.append(f"    Peak months: {', '.join(map(str, peak_months))}")
+        else:
+            lines.append("  • No seasonality detected")
+    
+    # Trend info
+    trend = forecast_analysis.get('trend')
+    if trend:
+        trend_dir = trend.get('trend', 'unknown')
+        growth = trend.get('growth_rate', 0)
+        lines.append(f"  Market Trend: {trend_dir.upper()} ({growth:+.2f}%)")
+        lines.append(f"    {trend.get('forecast_impact', '')}")
+    
+    # Accuracy metrics
+    metrics = forecast_analysis.get('accuracy_metrics')
+    if metrics:
+        mape = metrics.get('mape')
+        quality = metrics.get('forecast_quality', 'Unknown')
+        if mape != float('inf'):
+            lines.append(f"  Forecast Quality: {quality} (MAPE: {mape:.2f}%)")
+        else:
+            lines.append(f"  Forecast Quality: Cannot compute (insufficient non-zero data)")
+    
+    return "\n".join(lines)
 
 
 def _resolve_weekly_periods(planning_start_month: str, planning_end_month: str, configured_periods: int) -> int:
@@ -707,7 +832,7 @@ def main(config_overrides: dict | None = None):
                     if key in stock_lookup[sku] and pd.notna(stock_lookup[sku][key]):
                         params[key] = stock_lookup[sku][key]
 
-            forecast, purchase_plan = _run_plan_for_single_series(
+            forecast, purchase_plan, forecast_analysis = _run_plan_for_single_series(
                 historical_df=hist_sku[["date", "quantity"]],
                 planned_sales_df=sku_planned_sales,
                 planned_purchases_df=sku_planned_purchases,
@@ -715,18 +840,24 @@ def main(config_overrides: dict | None = None):
             )
             forecast["sku"] = sku
             purchase_plan["sku"] = sku
+            # Log forecast analysis for this SKU
+            if forecast_analysis['forecast_method'] != 'moving_average':
+                print(f"  SKU {sku}: Using {forecast_analysis['forecast_method']}")
             all_forecasts.append(forecast)
             all_purchase_plans.append(purchase_plan)
 
         forecast_df = pd.concat(all_forecasts, ignore_index=True)
         purchase_plan_df = pd.concat(all_purchase_plans, ignore_index=True)
     else:
-        forecast_df, purchase_plan_df = _run_plan_for_single_series(
+        forecast_df, purchase_plan_df, forecast_analysis = _run_plan_for_single_series(
             historical_df=historical_df[["date", "quantity"]],
             planned_sales_df=planned_sales,
             planned_purchases_df=planned_purchases,
             params=default_params,
         )
+        # Log forecast analysis
+        print("\n[3] Forecast Analysis")
+        print(_create_forecast_analysis_summary(forecast_analysis))
 
     if "sku" in purchase_plan_df.columns:
         enrich_cols = [

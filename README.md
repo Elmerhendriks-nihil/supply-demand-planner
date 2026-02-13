@@ -141,11 +141,28 @@ Example `config` parameters:
 ## Key Classes
 
 ### DemandPlanner
-- `load_historical_sales()`: Load sales history
-- `calculate_average_daily_demand()`: Get baseline demand
+**Core Methods:**
+- `load_historical_sales()`: Load and validate sales history
+- `calculate_average_daily_demand()`: Get baseline average demand
 - `calculate_daily_demand_std()`: Measure demand variability
-- `forecast_weekly()`: Generate weekly forecast periods
-- `build_demand_plan()`: Use planned sales with forecast fallback
+
+**Forecasting Methods:**
+- `forecast_weekly()`: Generate weekly moving average forecast
+- `build_demand_plan()`: Combine planned sales with forecast fallback
+- `detect_seasonality()`: Identify seasonal patterns by month
+- `forecast_with_seasonality()`: Generate seasonally-adjusted forecast
+
+**Advanced Forecasting:**
+- `forecast_exponential_smoothing()`: Double exponential smoothing with trend detection
+  - Better for trending markets
+  - Parameters: `alpha` (smoothing), `trend_beta` (trend weight)
+  - Example: `planner.forecast_exponential_smoothing(periods=12, alpha=0.3, trend_beta=0.15)`
+- `detect_trend()`: Analyze trend direction and growth rate
+  - Returns: trend direction, strength, growth rate, and forecast impact
+  - Example: `trend = planner.detect_trend(periods=90)`
+- `calculate_forecast_error()`: Evaluate forecast accuracy
+  - Metrics: MAE, RMSE, MAPE, bias, quality rating
+  - Example: `metrics = planner.calculate_forecast_error(actual, forecast)`
 
 ### InventoryManager
 - `calculate_safety_stock()`: Compute safety stock from service level and variability
@@ -156,7 +173,53 @@ Example `config` parameters:
 
 ### ExcelGenerator
 - `create_planning_template()`: Generate blank planning template
-- `create_forecast_report()`: Export data to Excel
+- `create_forecast_report()`: Export data to Excel with multiple sheets
+
+## Advanced Forecasting Guide
+
+### Choosing the Right Forecast Method
+
+| Scenario | Method | Parameters |
+|----------|--------|-----------|
+| **Seasonal demand** (holidays, Q4) | `forecast_with_seasonality()` | `periods`, `ma_weeks` |
+| **Growing/declining market** | `forecast_exponential_smoothing()` | `alpha=0.3-0.5`, `trend_beta=0.1-0.2` |
+| **Stable market** | `forecast_weekly()` | `periods`, `ma_weeks` |
+| **Unknown - need analysis** | `detect_trend()` first | `periods=60-90` |
+
+### Example Workflow - Advanced Forecasting
+
+```python
+from src import DemandPlanner
+import pandas as pd
+
+# Load data
+planner = DemandPlanner()
+planner.load_historical_sales(historical_df)
+
+# Step 1: Analyze patterns
+trend = planner.detect_trend(periods=90)
+seasonality = planner.detect_seasonality(min_coefficient=0.15)
+
+print(f"Market trend: {trend['trend']} ({trend['growth_rate']:+.2f}%)")
+print(f"Seasonal pattern: {seasonality['annual_pattern']}")
+
+# Step 2: Choose forecast method
+if seasonality['has_seasonality']:
+    forecast = planner.forecast_with_seasonality(periods=12)
+    print("Using seasonal forecast")
+elif trend['trend'] != 'stable':
+    forecast = planner.forecast_exponential_smoothing(periods=12, alpha=0.4, trend_beta=0.15)
+    print("Using trend-aware exponential smoothing")
+else:
+    forecast = planner.forecast_weekly(periods=12)
+    print("Using baseline moving average forecast")
+
+# Step 3: Evaluate accuracy (validate on recent data)
+recent_actual = historical_df.tail(30)['quantity'].values
+recent_forecast = [forecast.iloc[i]['forecast'] for i in range(min(30, len(forecast)))]
+metrics = planner.calculate_forecast_error(recent_actual, recent_forecast)
+print(f"Forecast accuracy: MAPE={metrics['mape']:.2f}% ({metrics['forecast_quality']})")
+```
 
 ## Example Workflow
 
