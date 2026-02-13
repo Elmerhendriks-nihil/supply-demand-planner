@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from enhance_fs_workbook import DEFAULT_INPUT as FS_DEFAULT_INPUT
+from enhance_fs_workbook import DEFAULT_OUTPUT as FS_DEFAULT_OUTPUT
+from enhance_fs_workbook import enhance_fs_workbook
 from src import DemandPlanner, ExcelGenerator, InventoryManager
 
 
@@ -553,13 +556,15 @@ def _build_monthly_stock_outlook(
     return outlook[ordered_cols]
 
 
-def main():
+def main(config_overrides: dict | None = None):
     """Run the supply and demand planning example."""
     print("=" * 60)
     print("Supply and Demand Planning Tool - Product Master Integrated")
     print("=" * 60)
 
     config = _load_optional_config()
+    if config_overrides:
+        config.update(config_overrides)
     product_master = _load_product_master(config)
     filtered_products = _filter_product_master(product_master, config)
     allowed_skus = set(filtered_products["sku"].tolist())
@@ -767,6 +772,19 @@ def main():
         stock_outlook_df=stock_outlook_df,
         dashboard_title="Planner Dashboard",
     )
+    enhanced_fs_path = None
+    fs_input_path = Path(str(config.get("fs_workbook_input_path", FS_DEFAULT_INPUT)))
+    fs_output_path = Path(str(config.get("fs_workbook_output_path", FS_DEFAULT_OUTPUT)))
+    if fs_input_path.exists():
+        enhanced_fs_path = enhance_fs_workbook(
+            {
+                "purchase_plan": purchase_plan_df,
+                "action_list": action_list_df,
+                "stock_outlook": stock_outlook_df,
+            },
+            input_path=fs_input_path,
+            output_path=fs_output_path,
+        )
 
     print("\n" + "=" * 60)
     print("Summary")
@@ -776,6 +794,8 @@ def main():
     print(f"[OK] Purchase plan rows: {len(purchase_plan_df)}")
     print(f"[OK] Excel template generated: {template_path}")
     print(f"[OK] Forecast report generated: {report_path}")
+    if enhanced_fs_path is not None:
+        print(f"[OK] Enhanced FS workbook generated: {enhanced_fs_path}")
     print("=" * 60)
 
     return {
@@ -788,6 +808,7 @@ def main():
         "purchase_plan": purchase_plan_df,
         "action_list": action_list_df,
         "stock_outlook": stock_outlook_df,
+        "enhanced_fs_workbook": str(enhanced_fs_path) if enhanced_fs_path is not None else None,
     }
 
 

@@ -65,6 +65,20 @@ purchase_plan = inventory.plan_purchases(
 excel_gen.create_planning_template()
 ```
 
+### Streamlit UI
+
+Run the web app:
+
+```bash
+streamlit run streamlit_app.py
+```
+
+In the UI:
+1. Upload `Product Master` and `Historical Sales` (required)
+2. Upload optional files (`Committed Sales`, `Planned Purchases`, `Current Stock`)
+3. Set planning window and click `Run Planning`
+4. Download `forecast_report.xlsx` directly from the app
+
 ### Run with your real data
 
 1. Put your files in `data/` with these names:

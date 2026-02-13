@@ -4,11 +4,13 @@ stock_file_path,C:\Users\elmer\Downloads\Stock.xlsx
 committed_sales_path,C:\Users\elmer\Downloads\planned_sales.xlsx
 planned_purchases_path,C:\Users\elmer\Downloads\planned_purchases.xlsx
 historical_sales_path,C:\Users\elmer\Downloads\4. Odoo Verkoop History (gefactureerd datum) - data (2).csv
+fs_workbook_input_path,C:\Users\elmer\Downloads\FS 2025_2026 (obv Odoo Files).xlsx
+fs_workbook_output_path,templates\FS 2025_2026 (obv Odoo Files) - enhanced.xlsx
 current_stock,1000
 safety_stock,150
-lead_time_days,14
-min_order_qty,100
-order_multiple,25
+lead_time_days,100
+min_order_qty,1
+order_multiple, 1
 service_level,0.95
 planning_start_month,2026-01
 planning_end_month,2026-12
