@@ -481,6 +481,10 @@ def _build_action_list(purchase_plan_df: pd.DataFrame) -> pd.DataFrame:
             if meta_col in group.columns:
                 first_val = group[meta_col].dropna()
                 row[meta_col] = first_val.iloc[0] if not first_val.empty else None
+        for size_col in ["SIZE_CODE US", "SIZE_CODE UK", "SIZE_CODE EU"]:
+            if size_col in group.columns:
+                first_val = group[size_col].dropna()
+                row[size_col] = first_val.iloc[0] if not first_val.empty else None
 
         action_rows.append(row)
 
@@ -527,12 +531,22 @@ def _build_monthly_stock_outlook(
     outlook = current_stock_df.merge(monthly_stock, on="sku", how="left")
 
     # Add key product metadata if available.
-    for meta_col in ["ART_NAME", "CATEGORY", "SUB CATEGORY", "GENDER"]:
+    for meta_col in ["ART_NAME", "CATEGORY", "SUB CATEGORY", "GENDER", "SIZE_CODE US", "SIZE_CODE UK", "SIZE_CODE EU"]:
         if meta_col in working.columns:
             meta_df = working.groupby("sku", as_index=False)[meta_col].first()
             outlook = outlook.merge(meta_df, on="sku", how="left")
 
-    preferred_order = ["sku", "ART_NAME", "CATEGORY", "SUB CATEGORY", "GENDER", "current_stock"]
+    preferred_order = [
+        "sku",
+        "ART_NAME",
+        "CATEGORY",
+        "SUB CATEGORY",
+        "GENDER",
+        "SIZE_CODE US",
+        "SIZE_CODE UK",
+        "SIZE_CODE EU",
+        "current_stock",
+    ]
     month_cols = sorted([col for col in outlook.columns if col[:4].isdigit() and len(col) == 7])
     other_cols = [col for col in outlook.columns if col not in preferred_order + month_cols]
     ordered_cols = [col for col in preferred_order if col in outlook.columns] + month_cols + other_cols
@@ -718,6 +732,9 @@ def main():
             "GENDER",
             "COLOR_DESCRIPTION",
             "TRADE PRICE",
+            "SIZE_CODE US",
+            "SIZE_CODE UK",
+            "SIZE_CODE EU",
         ]
         available_cols = [col for col in enrich_cols if col in filtered_products.columns]
         purchase_plan_df = purchase_plan_df.merge(
