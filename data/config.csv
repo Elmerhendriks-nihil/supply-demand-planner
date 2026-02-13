@@ -1,0 +1,16 @@
+parameter,value
+product_master_path,C:\Users\elmer\Downloads\Product range.csv
+stock_file_path,C:\Users\elmer\Downloads\Stock.xlsx
+committed_sales_path,C:\Users\elmer\Downloads\planned_sales.xlsx
+planned_purchases_path,C:\Users\elmer\Downloads\planned_purchases.xlsx
+historical_sales_path,C:\Users\elmer\Downloads\4. Odoo Verkoop History (gefactureerd datum) - data (2).csv
+current_stock,1000
+safety_stock,150
+lead_time_days,14
+min_order_qty,100
+order_multiple,25
+service_level,0.95
+planning_start_month,2026-01
+planning_end_month,2026-12
+forecast_periods,12
+moving_average_weeks,4
